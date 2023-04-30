@@ -3,16 +3,16 @@
 import { addNamed } from '@babel/helper-module-imports'
 import type { NodePath } from '@babel/traverse'
 import * as t from '@babel/types'
-import { MacroError, createMacro } from 'babel-plugin-macros'
+import { createMacro } from 'babel-plugin-macros'
 
-const macro = ({ references }: any) => {
+const macro = ({ references }: { references: { useProxy?: NodePath[] } }) => {
   if (import.meta.env?.MODE !== 'production') {
-    console.warn('[DEPRECATED] Use useProxy hook instead.')
+    throw new Error(`[DEPRECATED] Use useProxy hook instead.`)
   }
-  references.useProxy?.forEach((path: NodePath) => {
+  references.useProxy?.forEach((path) => {
     const hook = addNamed(path, 'useSnapshot', 'valtio')
     const proxy = (path.parentPath?.get('arguments.0') as any)?.node
-    if (!t.isIdentifier(proxy)) throw new MacroError('no proxy object')
+    if (!t.isIdentifier(proxy)) throw new Error('no proxy object')
     const snap = t.identifier(`valtio_macro_snap_${proxy.name}`)
     path.parentPath?.parentPath?.replaceWith(
       t.variableDeclaration('const', [
@@ -22,29 +22,16 @@ const macro = ({ references }: any) => {
     let inFunction = 0
     path.parentPath?.getFunctionParent()?.traverse({
       Identifier(p) {
-        if (
-          inFunction === 0 && // in render
-          p.node !== proxy &&
-          p.node.name === proxy.name
-        ) {
+        if (inFunction === 0 && p.node !== proxy && p.node.name === proxy.name) {
           p.node.name = snap.name
         }
       },
       Function: {
-        enter() {
-          ++inFunction
-        },
-        exit() {
-          --inFunction
-        },
+        enter() { inFunction++ },
+        exit() { inFunction-- },
       },
     })
   })
 }
-
-/**
- * @deprecated Use useProxy hook instead.
- */
-export declare function useProxy<T extends object>(proxyObject: T): void
 
 export default createMacro(macro, { configName: 'valtio' })
